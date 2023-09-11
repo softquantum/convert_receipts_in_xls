@@ -1,5 +1,6 @@
 *.pdf
 *.PDF
+*.xlsx
 .idea
 .vscode
 .venv
