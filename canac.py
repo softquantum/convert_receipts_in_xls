@@ -9,6 +9,7 @@ import pdfplumber
 def extract_expenses(pdf_folder_path):
     """Extract tables from PDF files in a folder using pdfplumber."""
     columns = [
+        "Store",
         "Date",
         "Filename",
         "Article",
@@ -59,6 +60,7 @@ def extract_expenses(pdf_folder_path):
                         elements = line.split()
                         if len(elements) >= 6:
                             row = {
+                                "Store": "Canac",
                                 "Date": formatted_date,
                                 "Filename": pdf_file_name,
                                 "Article": elements[0],
@@ -75,6 +77,7 @@ def extract_expenses(pdf_folder_path):
                         # Extract amounts for SOUS-TOTAL, TPS/TVH, TVP/TVQ, and TOTAL
                         elif len(elements) <= 4:
                             row = {
+                                "Store": "Canac",
                                 "Date": formatted_date,
                                 "Filename": pdf_file_name,
                                 "Article": "",
@@ -102,6 +105,6 @@ def extract_expenses(pdf_folder_path):
     return data_table
 
 
-results = extract_expenses("Canac")
-results.to_excel("canac_data.xlsx", index=False)
+results = extract_expenses("receipts/Canac")
+results.to_excel("receipts/canac_data.xlsx", index=False)
 print("Tabulated data has been saved to 'canac_data.xlsx'")

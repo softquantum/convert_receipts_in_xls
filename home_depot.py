@@ -21,7 +21,7 @@ def extract_expenses(pdf_folder_path):
                 page = pdf_reader.pages[0]
                 text = page.extract_text()
 
-                # Extract and format the date from the 4th line of the entire text
+                # Extract and format the date from the 3rd line of the entire text
                 raw_date_line = text.split("\n")[2].strip()
                 raw_date_match = re.search(r"(\d{2}-\d{2}-\d{2})", raw_date_line)
                 if raw_date_match:
@@ -64,6 +64,7 @@ def extract_expenses(pdf_folder_path):
                             total = unit_price
                         tabulated_data.append(
                             [
+                                "Home Depot",
                                 formatted_date,
                                 pdf_filename,
                                 item_code,
@@ -90,6 +91,7 @@ def extract_expenses(pdf_folder_path):
                 # Add amounts to the tabulated data
                 tabulated_data.append(
                     [
+                        "Home Depot",
                         formatted_date,
                         pdf_filename,
                         "",
@@ -103,6 +105,7 @@ def extract_expenses(pdf_folder_path):
                 )
                 tabulated_data.append(
                     [
+                        "Home Depot",
                         formatted_date,
                         pdf_filename,
                         "",
@@ -116,6 +119,7 @@ def extract_expenses(pdf_folder_path):
                 )
                 tabulated_data.append(
                     [
+                        "Home Depot",
                         formatted_date,
                         pdf_filename,
                         "",
@@ -128,13 +132,25 @@ def extract_expenses(pdf_folder_path):
                     ]
                 )
                 tabulated_data.append(
-                    [formatted_date, pdf_filename, "", "", "", "", "", "TOTAL", total]
+                    [
+                        "Home Depot",
+                        formatted_date,
+                        pdf_filename,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "TOTAL",
+                        total,
+                    ]
                 )
 
     # Create a DataFrame and save it to an Excel file
     data_table = pd.DataFrame(
         tabulated_data,
         columns=[
+            "Store",
             "Date",
             "File Name",
             "Item Code",
@@ -158,6 +174,6 @@ def extract_expenses(pdf_folder_path):
     return data_table
 
 
-results = extract_expenses("HomeDepot")
-results.to_excel("home-depot_data.xlsx", index=False)
+results = extract_expenses("receipts/HomeDepot")
+results.to_excel("receipts/home-depot_data.xlsx", index=False)
 print("Tabulated data has been saved to 'home-depot_data.xlsx'")

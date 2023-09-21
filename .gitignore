@@ -1,5 +1,7 @@
 *.pdf
 *.PDF
+*.jpg
+*.jpeg
 *.xlsx
 .idea
 .vscode
