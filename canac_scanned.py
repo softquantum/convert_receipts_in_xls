@@ -2,10 +2,12 @@ import os
 import re
 from datetime import datetime
 
-import cv2
 import pandas as pd
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+
+TPS_PERCENTAGE = 0.05
+TVQ_PERCENTAGE = 0.09975
 
 
 def get_element(a_list, index):
@@ -16,13 +18,9 @@ def get_element(a_list, index):
 def extract_numeric_value(str):
     """Extract the first numeric value from a string."""
     if str:
-        # Extract numeric values (including commas and periods)
         matches = re.findall(r"\d+[\s]*[,\.]?[\s]*\d*", str)
         if matches:
-            # Replace commas with periods for decimal numbers and remove spaces
             number = float(matches[0].replace(",", ".").replace(" ", ""))
-
-            # Return an integer if the number is an integer, otherwise return a float
             return int(number) if number == int(number) else number
         else:
             return None
@@ -50,34 +48,12 @@ def correct_image_orientation(image_path):
 def prepare_image_for_ocr(image_path):
     """Prepare an image for OCR by converting it to grayscale and enhancing contrast."""
     image = correct_image_orientation(image_path)
-    # image = Image.open(image_path)
-
-    # Convert to grayscale
     image = image.convert("L")
-
-    # Apply a median filter for noise reduction (optional)
     image = image.filter(ImageFilter.MedianFilter(size=3))
-
-    # Enhance contrast
     enhancer = ImageEnhance.Contrast(image)
     image = enhancer.enhance(2)
-
-    # Enhance brightness
-    # enhancer = ImageEnhance.Brightness(image)
-    # image = enhancer.enhance(1.1)
-
-    # Enhance sharpness
     enhancer = ImageEnhance.Sharpness(image)
     image = enhancer.enhance(1.5)
-
-    # Resize image
-    # image = image.resize(
-    #     (int(image.width * 1.5), int(image.height * 1.5)), Image.LANCZOS
-    # )
-
-    # Invert image (depending on the background)
-    # image = ImageOps.invert(image)
-
     return image
 
 
@@ -99,29 +75,36 @@ def extract_expenses(file_folder_path):
     data_table = pd.DataFrame(columns=columns)
 
     for file_name in os.listdir(file_folder_path):
-        print("file_name", file_name)
+        formatted_date = "Unknown Date"
+        sous_total = tps = tvq = grand_total = None
+
         if file_name.endswith((".jpg", ".jpeg")):
+            print(f"Extracting data from {file_name}...")
             image = prepare_image_for_ocr(os.path.join(file_folder_path, file_name))
-
-            # Using pytesseract
             text = pytesseract.image_to_string(image, config="--oem 3 --psm 6")
-
-            print("text", text)
             relevant_lines = text.split("\n")[1:-1] if text.split("\n")[1:-1] else []
-            formatted_date = "Unknown Date"
 
             for line in text.split("\n"):
                 raw_date_match = re.search(r"(\d{2}-\d{2}-\d{2})", line)
                 if raw_date_match:
                     raw_date = raw_date_match.group(1)
-                    formatted_date = datetime.strptime(raw_date, "%m-%d-%y").strftime(
-                        "%Y-%m-%d"
-                    )
+                    try:
+                        formatted_date = datetime.strptime(
+                            raw_date, "%m-%d-%y"
+                        ).strftime("%Y-%m-%d")
+                    except ValueError:
+                        try:
+                            formatted_date = datetime.strptime(
+                                raw_date, "%d-%m-%y"
+                            ).strftime("%Y-%m-%d")
+                        except ValueError:
+                            formatted_date = raw_date
                     break
 
             i = 0
             c = d = 0
             item_code = description = quantity = unit_price = total = None
+            sous_total = tps = tvq = grand_total = None
 
             while i < len(relevant_lines):
                 line = relevant_lines[i].strip()
@@ -149,29 +132,28 @@ def extract_expenses(file_folder_path):
                     i += 1
                     continue
 
-                # Skip lines with only one element
                 elements = line.split()
                 if len(elements) == 1:
-                    print("Skipping line:", line)
                     i += 1
                     continue
 
                 if c == 1:
-                    line_elements = line.split()
-                    total = extract_numeric_value(
-                        line_elements[-1] if line_elements else "0"
-                    )
+                    elements = line.split()
+                    total = extract_numeric_value(elements[-1] if elements else "0")
                     description = (
-                        " ".join(line_elements[:-1])
-                        if total is not None
-                        else line.strip()
+                        " ".join(elements[:-1]) if total is not None else line.strip()
                     )
                     c = 0
                     i += 1
                     continue
 
                 if "x" in line and d == 1:
-                    quantity_str, unit_price_str = line.split("x")
+                    elements = line.split("x")
+                    if len(elements) == 2:
+                        quantity_str, unit_price_str = elements
+                    else:
+                        quantity_str = elements[0]
+                        unit_price_str = " ".join(elements[1:])
                     unit_price = extract_numeric_value(unit_price_str)
                     quantity = (
                         extract_numeric_value(quantity_str)
@@ -188,30 +170,7 @@ def extract_expenses(file_folder_path):
                 except TypeError:
                     total = 0
 
-                if item_code is not None and description is not None:
-                    if quantity is None:
-                        try:
-                            quantity = total / unit_price
-                        except TypeError:
-                            quantity = 1
-                    if unit_price is None:
-                        try:
-                            unit_price = total / quantity
-                        except TypeError:
-                            unit_price = "N/A"
-                    if total is None or total == 0:
-                        try:
-                            total = quantity * unit_price
-                        except TypeError:
-                            total = "N/A"
-
-                    if quantity and unit_price:
-                        total = (
-                            quantity * unit_price
-                            if total != quantity * unit_price
-                            else total
-                        )
-
+                if item_code and description and quantity and unit_price and total:
                     tabulated_data.append(
                         [
                             "Canac",
@@ -226,16 +185,77 @@ def extract_expenses(file_folder_path):
                             "",
                         ]
                     )
-                item_code = description = quantity = unit_price = total = None
+                    item_code = description = quantity = unit_price = total = None
+
+                # Extract
+                if "SOUS-TOTAL" in line:
+                    sous_total = extract_numeric_value(line)
+                elif "TPS" in line:
+                    tps = extract_numeric_value(line)
+                elif "TVQ" in line:
+                    tvq = extract_numeric_value(line)
+                elif "TOTAL" in line:
+                    grand_total = extract_numeric_value(line)
 
                 i += 1
 
-        # Set the display option to show all columns
-        pd.set_option("display.max_columns", None)
+        # If sous_total is missing but grand_total is present
+        if not sous_total and grand_total:
+            sous_total = grand_total / (TPS_PERCENTAGE + TVQ_PERCENTAGE + 1)
 
-        # Create a dataframe from the tabulated data
-        data_table = pd.DataFrame(tabulated_data, columns=columns)
+        # If tps is missing but sous_total or total are present
+        if not tps or sous_total or grand_total:
+            if grand_total:
+                tps = (
+                    grand_total / (TPS_PERCENTAGE + TVQ_PERCENTAGE + 1) * TPS_PERCENTAGE
+                )
+            elif sous_total:
+                tps = sous_total * TPS_PERCENTAGE
 
+        # If tvq is missing but sous_total or total are present
+        if not tvq or sous_total or grand_total:
+            if grand_total:
+                tvq = (
+                    grand_total / (TPS_PERCENTAGE + TVQ_PERCENTAGE + 1) * TVQ_PERCENTAGE
+                )
+            elif sous_total:
+                tvq = sous_total * TVQ_PERCENTAGE
+
+        # If grand_total is missing but sous_total is present
+        if not grand_total and sous_total:
+            grand_total = sous_total * (TPS_PERCENTAGE + TVQ_PERCENTAGE + 1)
+
+        sous_total = round(sous_total, 2) if sous_total else None
+        tps = round(tps, 2) if tps else None
+        tvq = round(tvq, 2) if tvq else None
+        grand_total = round(grand_total, 2) if grand_total else None
+
+        values_dict = {
+            "SOUS TOTAL": sous_total,
+            "TPS": tps,
+            "TVQ": tvq,
+            "TOTAL": grand_total,
+        }
+
+        # Loop through the dictionary and append each item to the data table
+        print("Extracted values:", values_dict)
+        for text, value in values_dict.items():
+            tabulated_data.append(
+                [
+                    "Canac",
+                    formatted_date,
+                    file_name,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    text,
+                    value,
+                ]
+            )
+
+    data_table = pd.DataFrame(tabulated_data, columns=columns)
     return data_table
 
 
